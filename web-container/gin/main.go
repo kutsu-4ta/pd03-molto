@@ -1,9 +1,15 @@
 package main
 
 import (
+	"encoding/base64"
+	"log"
 	"net/http"
-// 	"fmt"
+	"net/url"
+	"os"
+	"strings"
+
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 var db = make(map[string]string)
@@ -64,24 +70,91 @@ func setupRouter() *gin.Engine {
 		}
 	})
 
-    // Spotify認証のリダイレクトURL
-    r.GET("/spotify/authorize", func(c *gin.Context) {
-        value := c.Query("code")
-         ok := true
-//         code := c.Query("code")
-        c.String(http.StatusOK, "Query Parameter: %s\n", value)
-        if ok {
-            c.JSON(http.StatusOK, gin.H{"code": value, "value": value})
-        } else {
-            c.JSON(http.StatusOK, gin.H{"query": value, "status": "no value"})
-        }
-    })
+	// Spotify認証のリダイレクトURL
+	r.GET("/spotify/authorize", func(c *gin.Context) {
+		code := c.Query("code")
+		state := c.Query("code")
+
+		if state == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": code, "error": "state_mismatch"})
+			return
+		}
+
+		ok := true
+		// c.String(http.StatusOK, "Query Parameter: %s\n", value)
+		if ok {
+			c.JSON(http.StatusOK, gin.H{"code": code})
+
+			// postリクエストを送信
+			doPostRequest(code)
+		} else {
+			c.JSON(http.StatusOK, gin.H{"query": code, "status": "no value"})
+		}
+	})
 
 	return r
 }
 
+func doPostRequest(code string) {
+	// POSTリクエストのボディに含めるデータを定義
+	form := url.Values{}
+	form.Add("grant_type", "authorization_code")
+	form.Add("code", code)
+	form.Add("redirect_uri", os.Getenv("SPOTIFY_REDIRECT_URI"))
+
+	body := strings.NewReader(form.Encode())
+	println(body)
+
+	// POSTリクエスト作成
+	req, err := http.NewRequest("POST", os.Getenv("SPOTIFY_TOKEN_URL"), body)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// ヘッダー
+	authToken := basicAuthToken(os.Getenv("SPOTIFY_CLIENT_ID"), os.Getenv("SPOTIFY_CLIENT_SECRET"))
+	req.Header.Set("Authorization", "Basic "+authToken)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	// POSTリクエストを送信
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		println("Failed to send request:", err.Error())
+		return
+	}
+
+	log.Println(os.Getenv("GIN_PORT"))
+
+	// (実際のアプリケーションでは適切な処理を行う)
+	println("Response status:", resp.Status)
+	println("Response status:", resp.StatusCode)
+}
+
+// Basic認証トークンを生成する関数
+func basicAuthToken(clientID, clientSecret string) string {
+	auth := clientID + ":" + clientSecret
+	return base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
 func main() {
+	// .envファイルから環境変数をロード
+	if err := godotenv.Load(".env"); err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	// ログファイル オープン // TODO: 調査が必要 途中からビルドでスタックするようになった
+	// file, err := os.Create("gin.log")
+	// if err != nil {
+	// 	log.Fatal("Failed to create log file:", err)
+	// }
+	// // Ginのデフォルトのロガーに設定
+	// gin.DefaultWriter = file
+	// defer file.Close()
+
+	// ルーティング
 	r := setupRouter()
-	// Listen and Server in 0.0.0.0:8080
-	r.Run(":8080")
+
+	// Listen and Server
+	r.Run(":" + os.Getenv("GIN_PORT"))
 }
