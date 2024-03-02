@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  molt-web-container:
+    build:
+      context: ./web-container
+      dockerfile: Dockerfile
+      target: dev
+    tty: true
+    stdin_open: true
+    volumes:
+      - ./web-container/gin/.:/go/src/app
+    ports:
+      - 8080:8080
+#    depends_on:  # dbコンテナ作ったら使用する 忘れないようにコメントアウト
+#      - db
+
+#  db:
+#    image: postgres:13.1-alpine
+#    volumes:
+#      - ./tmp/db:/var/lib/postgresql/data
+#    environment:
+#      POSTGRES_USER: postgres
+#      POSTGRES_PASSWORD: password
+#      PGDATA: /var/lib/postgresql/data/pgdata
